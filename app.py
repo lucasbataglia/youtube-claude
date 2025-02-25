@@ -88,24 +88,35 @@ def transcribe_video():
         temp_dir = os.path.join(TEMP_DIR, str(uuid.uuid4()))
         os.makedirs(temp_dir, exist_ok=True)
         
-        # Download audio from YouTube
-        audio_path = download_audio(youtube_url, temp_dir)
-        
-        # Transcribe the audio using the Whisper model
-        logger.info(f"Transcribing audio file: {audio_path}")
-        result = model.transcribe(audio_path, fp16=False if device == "cpu" else True)
-        
-        # Clean up temporary files
         try:
-            os.remove(audio_path)
-            os.rmdir(temp_dir)
+            # Download audio from YouTube
+            audio_path = download_audio(youtube_url, temp_dir)
+            
+            # Transcribe the audio using the Whisper model
+            logger.info(f"Transcribing audio file: {audio_path}")
+            result = model.transcribe(audio_path, fp16=False if device == "cpu" else True)
+            
+            # Clean up temporary files
+            try:
+                os.remove(audio_path)
+                os.rmdir(temp_dir)
+            except Exception as e:
+                logger.warning(f"Error cleaning up temporary files: {str(e)}")
+            
+            return jsonify({
+                "transcription": result["text"],
+                "segments": result["segments"]
+            })
         except Exception as e:
-            logger.warning(f"Error cleaning up temporary files: {str(e)}")
-        
-        return jsonify({
-            "transcription": result["text"],
-            "segments": result["segments"]
-        })
+            # Clean up temporary directory if it exists
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+            
+            # Re-raise the exception to be caught by the outer try-except
+            raise e
     
     except Exception as e:
         logger.error(f"Error transcribing video: {str(e)}", exc_info=True)
@@ -183,11 +194,13 @@ def download_audio(youtube_url, temp_dir):
                 'preferredquality': '192',
             }],
             'outtmpl': output_template,
-            'quiet': True,  # Set to True in production
-            'no_warnings': True,
+            'quiet': False,  # Set to True in production, False for debugging
+            'no_warnings': False,  # Set to False for debugging
             'ignoreerrors': False,
             'geo_bypass': True,
-            'nocheckcertificate': True,
+            'nocheckcertificate': True,  # Ignore SSL certificate verification
+            'socket_timeout': 30,  # Increase timeout
+            'verbose': True,  # Add verbose output for debugging
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -202,15 +215,9 @@ def download_audio(youtube_url, temp_dir):
         
     except Exception as e:
         logger.error(f"Error downloading audio: {str(e)}", exc_info=True)
-        
-        # For demonstration purposes, create a dummy MP3 file
-        # In a real application, you would handle this error differently
-        with open(audio_path, 'wb') as f:
-            # Write a small MP3 header (not a valid MP3, just for demonstration)
-            f.write(b'\xFF\xFB\x90\x44\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
-            
-        logger.info(f"Created dummy audio file for demonstration: {audio_path}")
-        return audio_path
+        # Instead of creating an invalid dummy file, raise the exception
+        # so the calling function can handle it appropriately
+        raise Exception(f"Failed to download audio from YouTube: {str(e)}")
 
 # Error handlers
 @app.errorhandler(404)
