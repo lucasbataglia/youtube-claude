@@ -2,10 +2,8 @@ version: "3.8"
 
 services:
   youtube-api:
-    image: ${REGISTRY-}youtube-api:latest
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: youtube-api:latest
+    # build section removed to use pre-built image
     networks:
       - traefik_public
       - digital_network
@@ -19,8 +17,8 @@ services:
           - node.role == manager
       resources:
         limits:
-          cpus: "1"
-          memory: 2048M
+          cpus: "2"
+          memory: 4096M
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.youtube-api.rule=Host(`api2.lukao.tv`)"
@@ -30,7 +28,7 @@ services:
         - "traefik.http.services.youtube-api.loadbalancer.server.port=5000"
         - "traefik.docker.network=traefik_public"
     environment:
-      - WHISPER_MODEL=base
+      - WHISPER_MODEL=base  # Options: tiny, base, small, medium, large
       - FLASK_ENV=production
       - FLASK_DEBUG=0
       - PORT=5000
