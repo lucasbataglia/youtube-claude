@@ -1,235 +1,63 @@
+#!/usr/bin/env python3
+"""
+Test script for downloading YouTube videos using the app.py download functions.
+"""
+
 import os
-import tempfile
-import uuid
-import time
-import logging
+import sys
 import ssl
 import certifi
-import urllib.request
-import requests
+import logging
+import tempfile
 import subprocess
 import shutil
-from flask import Flask, request, jsonify, send_file, render_template, make_response
-from flask_cors import CORS
-import yt_dlp
-# Import pytube for alternative YouTube download method
-try:
-    from pytube import YouTube
-except ImportError:
-    YouTube = None
-import whisper  # This is now openai-whisper
-import numpy as np
-import torch
-from dotenv import load_dotenv
-
-# Configure SSL with enhanced techniques
-def configure_ssl():
-    """Configure SSL with all possible workarounds."""
-    logging.info("Configuring SSL with advanced techniques...")
-    
-    # Method 1: Use certifi with custom context
-    try:
-        # Set up SSL context with certifi
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        # Set as default HTTPS context
-        ssl._create_default_https_context = lambda: ssl_context
-        
-        # Configure urllib to use our SSL context
-        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
-        urllib.request.install_opener(opener)
-        
-        # Configure requests to disable SSL verification
-        requests.packages.urllib3.disable_warnings()
-        
-        logging.info("SSL certificate verification disabled with certifi")
-    except Exception as e:
-        logging.warning(f"Failed to configure SSL context: {str(e)}")
-        # Fallback to completely disabling SSL verification
-        ssl._create_default_https_context = ssl._create_unverified_context
-        logging.warning("SSL certificate verification completely disabled")
-    
-    # Method 2: Set environment variables
-    os.environ['SSL_CERT_FILE'] = certifi.where()
-    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-    os.environ['PYTHONHTTPSVERIFY'] = '0'
-    logging.info("Set SSL environment variables")
-    
-    # Method 3: Load fix_ssl.py if it exists
-    fix_ssl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fix_ssl.py")
-    if os.path.exists(fix_ssl_path):
-        try:
-            logging.info(f"Loading SSL fix from {fix_ssl_path}")
-            with open(fix_ssl_path) as f:
-                exec(f.read())
-            logging.info("SSL fix loaded successfully")
-        except Exception as e:
-            logging.warning(f"Failed to load SSL fix: {str(e)}")
-
-# Run the enhanced SSL configuration
-configure_ssl()
+import urllib.request
+import requests
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("test-download")
 
-# Load environment variables
-load_dotenv()
-
-app = Flask(__name__)
-
-# Enable CORS for all routes
-CORS(app)
-
-# Create a directory for storing temporary files
-TEMP_DIR = os.environ.get("TEMP_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp"))
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-# Load the actual Whisper model
-model_size = os.environ.get("WHISPER_MODEL", "base")
-logger.info(f"Loading Whisper model: {model_size}")
-
-# Check if CUDA is available for GPU acceleration
-device = "cuda" if torch.cuda.is_available() else "cpu"
-logger.info(f"Using device: {device}")
-
-# Load the model
+# Configure SSL with certifi certificates
 try:
-    model = whisper.load_model(model_size, device=device)
-    logger.info(f"Whisper model {model_size} loaded successfully")
+    # Set up SSL context with certifi
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    # Set as default HTTPS context
+    ssl._create_default_https_context = lambda: ssl_context
+    
+    # Configure urllib to use our SSL context
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
+    urllib.request.install_opener(opener)
+    
+    # Configure requests to disable SSL verification
+    requests.packages.urllib3.disable_warnings()
+    
+    logger.info("SSL certificate verification disabled with certifi")
 except Exception as e:
-    logger.error(f"Error loading Whisper model: {str(e)}", exc_info=True)
-    raise
+    logger.warning(f"Failed to configure SSL context: {str(e)}")
+    # Fallback to completely disabling SSL verification
+    ssl._create_default_https_context = ssl._create_unverified_context
+    logger.warning("SSL certificate verification completely disabled")
 
-@app.route('/')
-def index():
-    """
-    Render the web interface.
-    """
-    return render_template('index.html')
+# Import pytube for alternative YouTube download method
+try:
+    from pytube import YouTube
+except ImportError:
+    YouTube = None
+    logger.warning("pytube is not installed")
 
-@app.route('/health')
-def health_check():
-    """
-    Health check endpoint.
-    """
-    return jsonify({
-        "status": "ok",
-        "version": "1.0.0",
-        "whisper_model": model_size,
-        "hostname": os.environ.get("HOSTNAME", "unknown")
-    })
-
-@app.route('/transcribe', methods=['POST'])
-def transcribe_video():
-    """
-    Endpoint to transcribe a YouTube video.
-    
-    Expected JSON payload:
-    {
-        "url": "https://www.youtube.com/watch?v=VIDEO_ID"
-    }
-    """
-    data = request.get_json()
-    
-    if not data or 'url' not in data:
-        return jsonify({"error": "URL is required"}), 400
-    
-    youtube_url = data['url']
-    logger.info(f"Transcription request for URL: {youtube_url}")
-    
-    try:
-        # Create a unique temporary directory for this request
-        temp_dir = os.path.join(TEMP_DIR, str(uuid.uuid4()))
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        try:
-            # Download audio from YouTube
-            audio_path = download_audio(youtube_url, temp_dir)
-            
-            # Transcribe the audio using the Whisper model
-            logger.info(f"Transcribing audio file: {audio_path}")
-            result = model.transcribe(audio_path, fp16=False if device == "cpu" else True)
-            
-            # Clean up temporary files
-            try:
-                os.remove(audio_path)
-                os.rmdir(temp_dir)
-            except Exception as e:
-                logger.warning(f"Error cleaning up temporary files: {str(e)}")
-            
-            return jsonify({
-                "transcription": result["text"],
-                "segments": result["segments"]
-            })
-        except Exception as e:
-            # Clean up temporary directory if it exists
-            try:
-                import shutil
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            except:
-                pass
-            
-            # Re-raise the exception to be caught by the outer try-except
-            raise e
-    
-    except Exception as e:
-        logger.error(f"Error transcribing video: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/downloads', methods=['GET'])
-def download_mp3():
-    """
-    Endpoint to download a YouTube video as MP3.
-    
-    Expected query parameters:
-    url: The YouTube video URL
-    """
-    youtube_url = request.args.get('url')
-    
-    if not youtube_url:
-        return jsonify({"error": "URL is required"}), 400
-    
-    logger.info(f"Download request for URL: {youtube_url}")
-    
-    try:
-        # Create a unique temporary directory for this request
-        temp_dir = os.path.join(TEMP_DIR, str(uuid.uuid4()))
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Download audio from YouTube
-        audio_path = download_audio(youtube_url, temp_dir)
-        
-        # Get video title for filename
-        video_id = youtube_url.split("v=")[-1].split("&")[0]
-        filename = f"youtube_audio_{video_id}.mp3"
-        
-        # Send the file to the client
-        response = make_response(send_file(
-            audio_path,
-            as_attachment=True,
-            download_name=filename,
-            mimetype="audio/mpeg"
-        ))
-        
-        # Add headers to prevent caching
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-        
-        # Clean up temporary files after sending (this won't work as expected, but we'll handle it)
-        # We'll need a background task or a cleanup job for production
-        
-        return response
-    
-    except Exception as e:
-        logger.error(f"Error downloading audio: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+# Import yt-dlp
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
+    logger.warning("yt-dlp is not installed")
 
 def download_audio(youtube_url, temp_dir):
     """
@@ -285,6 +113,9 @@ def download_audio(youtube_url, temp_dir):
 
 def download_with_yt_dlp(youtube_url, video_id, temp_dir, output_template, audio_path):
     """Download audio using yt-dlp Python library"""
+    if yt_dlp is None:
+        raise Exception("yt-dlp is not installed")
+        
     # Set environment variables for SSL
     os.environ['SSL_CERT_FILE'] = certifi.where()
     os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
@@ -501,16 +332,36 @@ def download_with_requests_direct(youtube_url, video_id, temp_dir, output_templa
     
     raise Exception("Direct download failed to produce a valid audio file")
 
-# Error handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Not found"}), 404
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python test_download.py <youtube_url> [output_path]")
+        return 1
+    
+    youtube_url = sys.argv[1]
+    output_path = sys.argv[2] if len(sys.argv) > 2 else "output.mp3"
+    
+    print(f"Testing download of {youtube_url} to {output_path}")
+    
+    # Create temp directory
+    temp_dir = tempfile.mkdtemp(prefix="test-download-")
+    
+    try:
+        # Download audio
+        audio_path = download_audio(youtube_url, temp_dir)
+        
+        # Copy to output path
+        shutil.copy2(audio_path, output_path)
+        
+        print(f"Download successful: {output_path}")
+        print(f"File size: {os.path.getsize(output_path) / (1024 * 1024):.2f} MB")
+        
+        return 0
+    except Exception as e:
+        print(f"Download failed: {str(e)}")
+        return 1
+    finally:
+        # Clean up temp directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
-@app.errorhandler(500)
-def server_error(error):
-    return jsonify({"error": "Internal server error"}), 500
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
-    app.run(host='0.0.0.0', port=port, debug=debug)
+if __name__ == "__main__":
+    sys.exit(main())

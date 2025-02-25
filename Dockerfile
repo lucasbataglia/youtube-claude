@@ -8,10 +8,19 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     openssl \
     curl \
+    wget \
+    python3-pip \
     && update-ca-certificates \
     && curl -k https://curl.se/ca/cacert.pem -o /usr/local/share/ca-certificates/cacert.crt \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install yt-dlp globally to ensure it's available as a command
+RUN pip install --no-cache-dir yt-dlp==2025.2.19 pytube>=12.1.0 \
+    && ln -sf /usr/local/bin/yt-dlp /usr/local/bin/youtube-dl
+
+# Create a directory for certificates
+RUN mkdir -p /etc/ssl/certs/python
 
 # Set environment variables for SSL certificate handling
 ENV SSL_CERT_DIR=/etc/ssl/certs
