@@ -6,7 +6,8 @@ import logging
 from flask import Flask, request, jsonify, send_file, render_template, make_response
 from flask_cors import CORS
 import yt_dlp
-import whisper
+import whisper  # This is now openai-whisper
+import numpy as np
 import torch
 from dotenv import load_dotenv
 
