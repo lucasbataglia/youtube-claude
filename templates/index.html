@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Transcription and Download API</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>YouTube Transcription and Download API</h1>
+    
+    <div class="tab">
+        <button class="tablinks active" onclick="openTab(event, 'Transcribe')">Transcribe</button>
+        <button class="tablinks" onclick="openTab(event, 'Download')">Download MP3</button>
+    </div>
+    
+    <div id="Transcribe" class="tabcontent" style="display: block;">
+        <div class="container">
+            <h2>Transcribe YouTube Video</h2>
+            <form id="transcribeForm">
+                <label for="transcribeUrl">YouTube URL:</label>
+                <input type="text" id="transcribeUrl" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
+                <button type="submit">Transcribe</button>
+            </form>
+            
+            <div class="loading" id="transcribeLoading">
+                <div class="spinner"></div>
+                <p>Transcribing video... This may take a few minutes.</p>
+            </div>
+            
+            <div id="transcribeResult" class="result" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <div id="Download" class="tabcontent">
+        <div class="container">
+            <h2>Download YouTube Video as MP3</h2>
+            <form id="downloadForm">
+                <label for="downloadUrl">YouTube URL:</label>
+                <input type="text" id="downloadUrl" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
+                <button type="submit">Download MP3</button>
+            </form>
+            
+            <div class="loading" id="downloadLoading">
+                <div class="spinner"></div>
+                <p>Preparing download...</p>
+            </div>
+            
+            <div id="downloadResult" class="result" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

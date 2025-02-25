@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  youtube-api:
+    image: ${REGISTRY-}youtube-api:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    networks:
+      - traefik_public
+      - digital_network
+    volumes:
+      - youtube_temp:/app/temp
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2048M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.youtube-api.rule=Host(`api2.lukao.tv`)"
+        - "traefik.http.routers.youtube-api.entrypoints=websecure"
+        - "traefik.http.routers.youtube-api.tls=true"
+        - "traefik.http.routers.youtube-api.tls.certresolver=le"
+        - "traefik.http.services.youtube-api.loadbalancer.server.port=5000"
+        - "traefik.docker.network=traefik_public"
+    environment:
+      - WHISPER_MODEL=base
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+      - PORT=5000
+      - TEMP_DIR=/app/temp
+
+volumes:
+  youtube_temp:
+    driver: local
+
+networks:
+  traefik_public:
+    external: true
+  digital_network:
+    external: true
