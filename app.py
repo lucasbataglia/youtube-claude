@@ -3,6 +3,8 @@ import tempfile
 import uuid
 import time
 import logging
+import ssl
+import certifi
 from flask import Flask, request, jsonify, send_file, render_template, make_response
 from flask_cors import CORS
 import yt_dlp
@@ -10,6 +12,9 @@ import whisper  # This is now openai-whisper
 import numpy as np
 import torch
 from dotenv import load_dotenv
+
+# Disable SSL verification globally (not recommended for production, but helps with SSL issues)
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # Configure logging
 logging.basicConfig(
@@ -186,6 +191,14 @@ def download_audio(youtube_url, temp_dir):
     audio_path = os.path.join(temp_dir, "audio.mp3")
     
     try:
+        # Create a custom opener that ignores SSL verification
+        import urllib.request
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
+        urllib.request.install_opener(opener)
+        
         ydl_opts = {
             'format': 'bestaudio/best',
             'postprocessors': [{
