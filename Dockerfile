@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies with more comprehensive SSL certificate handling
+# Install system dependencies with enhanced SSL certificate handling
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     ca-certificates \
@@ -12,20 +12,26 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && update-ca-certificates \
     && curl -k https://curl.se/ca/cacert.pem -o /usr/local/share/ca-certificates/cacert.crt \
+    && curl -k https://www.amazontrust.com/repository/AmazonRootCA1.pem -o /usr/local/share/ca-certificates/AmazonRootCA1.crt \
+    && curl -k https://letsencrypt.org/certs/isrgrootx1.pem -o /usr/local/share/ca-certificates/isrgrootx1.crt \
+    && curl -k https://letsencrypt.org/certs/lets-encrypt-r3.pem -o /usr/local/share/ca-certificates/lets-encrypt-r3.crt \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp globally to ensure it's available as a command
-RUN pip install --no-cache-dir yt-dlp==2025.2.19 pytube>=12.1.0 \
+# Install yt-dlp and pytube globally with specific versions
+RUN pip install --no-cache-dir yt-dlp==2025.2.19 pytube>=12.1.0 certifi requests \
     && ln -sf /usr/local/bin/yt-dlp /usr/local/bin/youtube-dl
 
-# Create a directory for certificates
-RUN mkdir -p /etc/ssl/certs/python
+# Create directories for certificates
+RUN mkdir -p /etc/ssl/certs/python /app/ssl
 
-# Set environment variables for SSL certificate handling
+# Copy certifi certificates to a known location
+RUN python -c "import certifi; import shutil; shutil.copy(certifi.where(), '/app/ssl/cert.pem')"
+
+# Set environment variables for enhanced SSL certificate handling
 ENV SSL_CERT_DIR=/etc/ssl/certs
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/app/ssl/cert.pem
+ENV REQUESTS_CA_BUNDLE=/app/ssl/cert.pem
 ENV PYTHONHTTPSVERIFY=0
 
 # Copy requirements file
@@ -33,6 +39,9 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Create SSL fix script
+RUN echo 'import os\nimport ssl\nimport certifi\n\n# Set environment variables\nos.environ["SSL_CERT_FILE"] = "/app/ssl/cert.pem"\nos.environ["REQUESTS_CA_BUNDLE"] = "/app/ssl/cert.pem"\n\n# Configure SSL context\nssl._create_default_https_context = ssl.create_default_context' > /app/fix_ssl.py
 
 # Copy application files
 COPY . .
