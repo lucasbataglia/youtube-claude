@@ -1,6 +1,6 @@
 flask==2.3.3
 flask-cors==4.0.0
-yt-dlp==2024.2.25
+yt-dlp==2025.2.19
 openai-whisper==20231117
 numpy>=1.20.0
 torch>=2.0.1
