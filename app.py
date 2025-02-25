@@ -5,6 +5,8 @@ import time
 import logging
 import ssl
 import certifi
+import urllib.request
+import requests
 from flask import Flask, request, jsonify, send_file, render_template, make_response
 from flask_cors import CORS
 import yt_dlp
@@ -13,8 +15,29 @@ import numpy as np
 import torch
 from dotenv import load_dotenv
 
-# Disable SSL verification globally (not recommended for production, but helps with SSL issues)
-ssl._create_default_https_context = ssl._create_unverified_context
+# Configure SSL with certifi certificates
+try:
+    # Set up SSL context with certifi
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    # Set as default HTTPS context
+    ssl._create_default_https_context = lambda: ssl_context
+    
+    # Configure urllib to use our SSL context
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
+    urllib.request.install_opener(opener)
+    
+    # Configure requests to disable SSL verification
+    requests.packages.urllib3.disable_warnings()
+    
+    logging.info("SSL certificate verification disabled with certifi")
+except Exception as e:
+    logging.warning(f"Failed to configure SSL context: {str(e)}")
+    # Fallback to completely disabling SSL verification
+    ssl._create_default_https_context = ssl._create_unverified_context
+    logging.warning("SSL certificate verification completely disabled")
 
 # Configure logging
 logging.basicConfig(
@@ -191,14 +214,10 @@ def download_audio(youtube_url, temp_dir):
     audio_path = os.path.join(temp_dir, "audio.mp3")
     
     try:
-        # Create a custom opener that ignores SSL verification
-        import urllib.request
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
-        urllib.request.install_opener(opener)
+        # Set environment variables to disable SSL verification for subprocesses
+        os.environ['PYTHONHTTPSVERIFY'] = '0'
         
+        # Advanced yt-dlp options with multiple SSL workarounds
         ydl_opts = {
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -207,13 +226,26 @@ def download_audio(youtube_url, temp_dir):
                 'preferredquality': '192',
             }],
             'outtmpl': output_template,
-            'quiet': False,  # Set to True in production, False for debugging
-            'no_warnings': False,  # Set to False for debugging
+            'quiet': False,
+            'no_warnings': False,
             'ignoreerrors': False,
             'geo_bypass': True,
             'nocheckcertificate': True,  # Ignore SSL certificate verification
-            'socket_timeout': 30,  # Increase timeout
-            'verbose': True,  # Add verbose output for debugging
+            'socket_timeout': 60,  # Increased timeout
+            'verbose': True,
+            'force_generic_extractor': False,
+            'extract_flat': False,
+            'source_address': '0.0.0.0',  # Use any available network interface
+            'legacy_server_connect': True,  # Use legacy server connect method
+            'http_headers': {  # Custom headers to appear more like a browser
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Cache-Control': 'max-age=0',
+            },
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

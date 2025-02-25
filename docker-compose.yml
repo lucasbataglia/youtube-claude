@@ -9,6 +9,11 @@ services:
       - PORT=5000
       - WHISPER_MODEL=base
       - FLASK_ENV=production
+      # SSL certificate handling
+      - SSL_CERT_DIR=/etc/ssl/certs
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+      - PYTHONHTTPSVERIFY=0
     volumes:
       - ./temp:/app/temp
     restart: unless-stopped
